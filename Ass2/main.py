@@ -15,10 +15,10 @@ import sympy
 from sympy import latex
 from sympy.interactive.printing import init_printing
 from scipy.stats import chi2
-mpl.rcParams['figure.dpi'] = 300
+mpl.rcParams['figure.dpi'] = 100
 #sys.path.append('../Ass2')
 basepath = os.path.abspath('')
-A2_path = f"{basepath}/Ass2"
+A2_path = f"{basepath}/"
 # In[Load and inspect data]
     
 data = np.loadtxt(f'{A2_path}/mars_soil.txt')

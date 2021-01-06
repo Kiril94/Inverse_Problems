@@ -4,54 +4,173 @@ Created on Sat Dec 19 08:34:04 2020
 
 @author: kiril klein
 """
-
 import numpy as np
-import numpy.linalg as la
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-import os
-from IPython.core.display import Latex
-import sympy 
-from sympy import latex
-from sympy.interactive.printing import init_printing
-from scipy.stats import chi2
+import numpy.random as rand
+from scipy import stats
 from scipy import constants as c
 # In[Data]
 G = c.G
 #use SI
-l_a,drho, delta = 3.42*1e3, -1.71e3, 1e-9 
+l_a,drho, delta = 3.421e3, -1.7e3, 1e-12
 #data, assigning a grav. anomaly dg to every position dist
 dist = np.array([535,749,963,1177,1391,1605,1819,
-                     2033,2247,2461,2675,2889])
+                     2033,2247,2461,2675,2889])#*1e-3
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
-                37.3,31.5,21.8, 12.8])
+                37.3,31.5,21.8, 12.8])*1e-5
+Nd = len(dist) #number data points
+Nm = 15 #number model params
+N_disc = 600
+frac = N_disc/Nm
+#construct Covariance matrix
+sigma_m = 300
+Cov_mi = np.eye(N_disc)/sigma_m**2
+sigma_d = 1e-5
+Cov_di = np.eye(Nd)/sigma_d**2
+xi_arr = np.linspace(0,l_a,N_disc)
+dx = l_a/N_disc #discretize space
+#create lengths and corresponding height vector
+l_arr = np.linspace(0,l_a,Nm)
+
 # In[Functions]
 def f_forward(h):
     """Given model parameters h, returns vector of grav. anomalies."""
     dg_pred = np.empty(Nd)
-    for i in range(Nd):
-        x_diff = x_arr-dist[i]
-        dg_pred[i] = G*drho*np.sum(dx*np.log(((x_diff**2+h**2)/(x_diff**2+delta))))
+    x_diff = xi_arr-dist[:,np.newaxis]
+    dg_pred =G*drho*dx*np.sum((
+        np.log((x_diff**2+h**2)/(x_diff**2+delta))),axis =1)       
     return dg_pred
 
-def f_happrox(i):
+def f_h_preferred(i):
     """Approximation for h given dg in a point x_i"""
     return dg[i]/(2*np.pi*G*drho)
-# In[Initial guess h0]
-Nd = len(dist) #data number
-num_m = 6 #number model params
-dx = l_a/(num_m-1) #discretize space
-#create lengths and corresponding height vector
-l_arr = np.linspace(0,l_a,num_m)
-h0 = np.empty(num_m)
+
+def f_loglikelihood(h):
+    g = f_forward(h)
+    deltag = (dg-g)[np.newaxis].T
+    return -1/2*deltag.T@Cov_di@deltag
+
+def f_rho(h):
+    deltah = (h-h0)[np.newaxis].T
+    return 1#-1/2*deltah.T@Cov_mi@deltah
+
+def f_exponent(h): return f_rho(h)+f_loglikelihood(h)     
+# In[preferred model h0]
+h0 = np.empty(N_disc)
 #separating the space in intervals of constant grav. anomaly
 dist_diff = (np.roll(dist,-1)-dist)/2
 dist_int = np.empty(len(dist)+1)
 dist_int[0] = 0
 dist_int[-1] = l_a
 dist_int[1:-1] = dist[:-1]+dist_diff[:-1]
-for i in range(len(dist)):
-    mask = (l_arr>=dist_int[i]) & (l_arr<=dist_int[i+1])
-    h0[mask] = f_happrox(i)
-display(h0)
-#display(f_happrox(np.arange(12)))
+x_h = np.linspace(0,l_a,N_disc)
+for i in range(Nm):
+    start_ind = int(frac*i)
+    stop_ind = int(frac*(i+1))
+    mid_ind = int((stop_ind+start_ind)/2)
+    idx_near = np.abs(dist - x_h[mid_ind]).argmin()#find idx of closest value
+    h0[start_ind:stop_ind] = f_h_preferred(idx_near)
+
+# In[MCMC]
+num_it = 10000
+num_acc = 0
+step_size = 100
+H = []
+hi = h0
+llikelihood = np.empty(num_it)
+for i in range(num_it):
+    if i%200==0:
+        print('iteration: {}'.format(i))
+    exp_i = f_exponent(hi)
+    #h_ind = rand.randint(0,len(hi))
+    rand_num = rand.uniform(-step_size,step_size)
+    hp = np.copy(hi)
+    mod = frac+1
+    k = i%mod
+    start_ind = int(frac*k)
+    stop_ind = int(frac*(k+1))
+    #f_ind = int(np.floor(h_ind/frac)*frac)
+    #c_ind = int(np.ceil(h_ind/frac)*frac)
+    hp[start_ind:stop_ind] = hi[start_ind:stop_ind] + rand_num
+    exp_p = f_exponent(hp)
+    if exp_p>=exp_i:
+        h = hp
+        num_acc+=1
+    else:
+        p_acc = np.exp(exp_p-exp_i)
+        prob = rand.uniform(0,1)
+        if p_acc>prob:
+            h = hp
+            num_acc +=1
+        else:
+            h = hi
+            
+    llikelihood[i] = f_loglikelihood(h)
+    hi = np.copy(h)
+    H.append(h)
+H = np.array(H)
+acc_rate = num_acc/num_it
+print(acc_rate)
+
+# In[Plot log likelihood]
+
+fig,ax = plt.subplots()
+ax.plot(np.arange(num_it), llikelihood,'.')
+
+ax.axhline(-Nd/2)
+ax.axhline(-Nd/2-np.sqrt(Nd/2), color = 'r')
+ax.axhline(-Nd/2+np.sqrt(Nd/2), color = 'r')
+ax.set_xlim(0,3000)
+ax.set_ylim(-30,0)
+plt.show()
+print(np.std(llikelihood[1000:])-np.sqrt(Nd/2))
+print(np.mean(llikelihood[1000:])-(-Nd/2))
+# In[Plot prediction]
+fig, ax= plt.subplots()
+ax.plot(dist,dg, label = 'data')
+ax.plot(dist,f_forward(h0),label =  'pred. h0')
+ax.plot(dist, f_forward(H[-1]), label = 'pred final')
+ax.legend()
+plt.show()
+# In[Plot with unc]
+fig, ax = plt.subplots(2,figsize = (18,12),gridspec_kw={'height_ratios': [3,1]})
+res = dg-f_forward(h)
+sigma = np.std(res)
+ax[1].plot(dist, res, '.', color = 'r')
+ax[1].axhline(y=sigma, color="b", zorder = 0)
+ax[1].axhline(y=-sigma, color="b",zorder = 0)
+trans = mpl.transforms.blended_transform_factory(
+        ax[1].get_yticklabels()[0].get_transform(), ax[1].transData)
+ax[1].text(0,sigma, r"$\sigma$", color="b", transform=trans, 
+        ha="right", va="center", fontsize = 20)
+ax[1].text(0,-sigma, r"$-\sigma$", color="b", transform=trans, 
+        ha="right", va="center", fontsize = 20)
+ax[1].set_ylabel('residual', fontsize = 30,labelpad = 20)
+
+ax[0].errorbar(x = dist, y = dg, yerr = sigma_d,capsize = 2,linestyle = 'dotted', label = 'data')
+ax[0].plot(dist, f_forward(h0),label = 'preferred')
+ax[0].plot(dist, f_forward(h), label = 'solution', color = 'g',linewidth = 2)
+
+ax[0].set_ylabel('gravity anomaly [mGal]',fontsize = 30,labelpad = 12)
+ax[1].set_xlabel('distance [m]',fontsize = 30,labelpad = 12)
+
+ax[0].tick_params(axis = 'y',labelsize  = 25)
+ax[1].tick_params(axis = 'both',labelsize  = 19)
+ax[0].legend(fontsize = 23)
+plt.subplots_adjust(hspace=0)
+# In[Histogram]
+#Take models for n>1600
+H = np.array(H)
+fig, ax = plt.subplots(5, 3)
+for i, ax in enumerate(fig.axes):
+    ax.hist(H[1600:,i])
+plt.show()
+
+# In[2d distribution]
+fig, ax = plt.subplots()
+ax.hist2d(H[1600:,7],H[1600:,6], 20)
+plt.show()
+# In[h0]
+fig, ax = plt.subplots()
+ax.plot(np.linspace(0,l_a,len(h0)),h0)
