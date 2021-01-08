@@ -20,9 +20,9 @@ dist = np.array([535,749,963,1177,1391,1605,1819,
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
                 37.3,31.5,21.8, 12.8])*1e-5
 Nd = len(dist) #number data points
-Nm = 15 #number model params
-N_disc = 600
-frac = N_disc/Nm
+Nm =20 #number model params
+N_disc = 120
+frac = int(np.floor(N_disc/Nm))
 #construct Covariance matrix
 sigma_m = 300
 Cov_mi = np.eye(N_disc)/sigma_m**2
@@ -53,46 +53,49 @@ def f_loglikelihood(h):
 
 def f_rho(h):
     deltah = (h-h0)[np.newaxis].T
-    return 1#-1/2*deltah.T@Cov_mi@deltah
+    return -1/2*deltah.T@Cov_mi@deltah
 
 def f_exponent(h): return f_rho(h)+f_loglikelihood(h)     
 # In[preferred model h0]
 h0 = np.empty(N_disc)
 #separating the space in intervals of constant grav. anomaly
-dist_diff = (np.roll(dist,-1)-dist)/2
-dist_int = np.empty(len(dist)+1)
-dist_int[0] = 0
-dist_int[-1] = l_a
-dist_int[1:-1] = dist[:-1]+dist_diff[:-1]
+#dist_diff = (np.roll(dist,-1)-dist)/2
+#dist_int = np.empty(len(dist)+1)
+#dist_int[0] = 0
+#dist_int[-1] = l_a
+#dist_int[1:-1] = dist[:-1]+dist_diff[:-1]
 x_h = np.linspace(0,l_a,N_disc)
 for i in range(Nm):
-    start_ind = int(frac*i)
-    stop_ind = int(frac*(i+1))
+    start_ind = frac*i
+    stop_ind = frac*(i+1)
+    #print(start_ind, stop_ind)
     mid_ind = int((stop_ind+start_ind)/2)
     idx_near = np.abs(dist - x_h[mid_ind]).argmin()#find idx of closest value
-    h0[start_ind:stop_ind] = f_h_preferred(idx_near)
-
+    if i!=(Nm-1):
+        h0[start_ind:stop_ind] = f_h_preferred(idx_near)
+    else:
+        h0[start_ind:] = f_h_preferred(idx_near)
 # In[MCMC]
 num_it = 10000
 num_acc = 0
-step_size = 100
+step_size = 50
 H = []
 hi = h0
 llikelihood = np.empty(num_it)
 for i in range(num_it):
-    if i%200==0:
+    if i%500==0:
         print('iteration: {}'.format(i))
     exp_i = f_exponent(hi)
-    #h_ind = rand.randint(0,len(hi))
     rand_num = rand.uniform(-step_size,step_size)
     hp = np.copy(hi)
-    mod = frac+1
-    k = i%mod
-    start_ind = int(frac*k)
-    stop_ind = int(frac*(k+1))
-    #f_ind = int(np.floor(h_ind/frac)*frac)
-    #c_ind = int(np.ceil(h_ind/frac)*frac)
-    hp[start_ind:stop_ind] = hi[start_ind:stop_ind] + rand_num
+    new_ind = int(i%Nm)
+    start_ind = frac*new_ind
+    stop_ind = frac*(new_ind+1)
+    #print(start_ind, stop_ind)
+    if new_ind!=(Nm-1):
+        hp[start_ind:stop_ind] = hi[start_ind:stop_ind]+rand_num
+    else:
+        hp[start_ind:] = hi[start_ind:]+rand_num
     exp_p = f_exponent(hp)
     if exp_p>=exp_i:
         h = hp
@@ -121,10 +124,10 @@ ax.plot(np.arange(num_it), llikelihood,'.')
 ax.axhline(-Nd/2)
 ax.axhline(-Nd/2-np.sqrt(Nd/2), color = 'r')
 ax.axhline(-Nd/2+np.sqrt(Nd/2), color = 'r')
-ax.set_xlim(0,3000)
-ax.set_ylim(-30,0)
+ax.set_xlim(0,num_it)
+ax.set_ylim(-40,0)
 plt.show()
-print(np.std(llikelihood[1000:])-np.sqrt(Nd/2))
+print(np.std(llikelihood[1000:])/np.sqrt(Nd/2))
 print(np.mean(llikelihood[1000:])-(-Nd/2))
 # In[Plot prediction]
 fig, ax= plt.subplots()
@@ -164,13 +167,30 @@ plt.subplots_adjust(hspace=0)
 H = np.array(H)
 fig, ax = plt.subplots(5, 3)
 for i, ax in enumerate(fig.axes):
-    ax.hist(H[1600:,i])
+    ax.hist(H[1600:,i],30)
 plt.show()
 
 # In[2d distribution]
-fig, ax = plt.subplots()
-ax.hist2d(H[1600:,7],H[1600:,6], 20)
+fig, ax = plt.subplots(2,int(Nm/2))
+for i in range(Nm):
+    axis = ax.flatten()[i]
+    axis.set_xticks([])
+    axis.set_yticks([])
+    axis.set(xlabel=f"{i}", ylabel = f"{i+1}")
+    axis.hist2d(H[1000:,i],H[1000:,i+1], 20)
+plt.subplots_adjust(wspace=.5, hspace=.3)
+
 plt.show()
 # In[h0]
 fig, ax = plt.subplots()
-ax.plot(np.linspace(0,l_a,len(h0)),h0)
+ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
+ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
+ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
+
+ax.legend()
+# In[avg model]
+fig, ax = plt.subplots()
+ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
+ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1000:,:], axis =0 ), label = 'h_mean')
+
+ax.legend()
