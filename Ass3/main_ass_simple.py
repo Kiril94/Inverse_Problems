@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 
 # -*- coding: utf-8 -*-
 """
@@ -23,24 +25,20 @@ dist = np.array([535,749,963,1177,1391,1605,1819,
                      2033,2247,2461,2675,2889])#*1e-3
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
                 37.3,31.5,21.8, 12.8])*1e-5
-Nd = len(dist) #number data points
-Nm =30#number model params
-N_disc = 90
+Nm =100#number model params
 sigma_m = 300
-Cov_mi = np.eye(N_disc)/sigma_m**2
+Cov_mi = np.eye(Nm)/sigma_m**2
 sigma_d = 1e-5
 Cov_di = np.eye(Nd)/sigma_d**2
-frac = int(np.floor(N_disc/Nm))
 #construct Covariance matrix
-xi_arr = np.linspace(0,l_a,N_disc)
-dx = l_a/N_disc #discretize space
+xi_arr = np.linspace(0,l_a,Nm)
+dx = l_a/Nm #discretize space
 #create lengths and corresponding height vector
-l_arr = np.linspace(0,l_a,Nm)
 
 # In[Functions]
 def f_forward(h):
     """Given model parameters h, returns vector of grav. anomalies."""
-    dg_pred = np.empty(Nd)
+    dg_pred = np.empty(Nm)
     x_diff = xi_arr-dist[:,np.newaxis]
     dg_pred =G*drho*dx*np.sum((
         np.log((x_diff**2+h**2)/(x_diff**2+delta))),axis =1)       
@@ -63,30 +61,16 @@ def f_exponent(h, Cmi = Cov_mi, Cdi=Cov_di):
     return f_rho(h,Cmi)+f_loglikelihood(h,Cdi)    
  
 # In[preferred model h0]
-h0 = np.empty(N_disc)
-#separating the space in intervals of constant grav. anomaly
-#dist_diff = (np.roll(dist,-1)-dist)/2
-#dist_int = np.empty(len(dist)+1)
-#dist_int[0] = 0
-#dist_int[-1] = l_a
-#dist_int[1:-1] = dist[:-1]+dist_diff[:-1]
-x_h = np.linspace(0,l_a,N_disc)
+h0 = np.empty(Nm)
+
 for i in range(Nm):
-    start_ind = frac*i
-    stop_ind = frac*(i+1)
-    #print(start_ind, stop_ind)
-    mid_ind = int((stop_ind+start_ind)/2)
-    idx_near = np.abs(dist - x_h[mid_ind]).argmin()#find idx of closest value
-    if i!=(Nm-1):
-        h0[start_ind:stop_ind] = f_h_preferred(idx_near)
-    else:
-        h0[start_ind:] = f_h_preferred(idx_near)
+    idx_near = np.abs(dist - xi_arr[i]).argmin()#find idx of closest value
+    h0[i] = f_h_preferred(idx_near)
 # In[MCMC]
-num_it = 10000
+num_it = 15000
 num_acc = 0
-step_size = 20
+step_size = 50
 H = []
-Hred = []
 hi = h0
 r_list = []
 llikelihood = np.empty(num_it)
@@ -94,17 +78,8 @@ for i in range(num_it):
     if i%500==0:
         print('iteration: {}'.format(i))
     exp_i = f_exponent(hi, Cov_mi, Cov_di)
-    rand_num = rand.uniform(-step_size,step_size, Nm)
-    ones_arr = np.ones((Nm, frac))
-    rand_arr = rand_num[:,np.newaxis]*ones_arr
-    rand_arr = np.ndarray.flatten(rand_arr)
-    
-    n_diff = int(len(hi)-len(rand_arr))
-    if n_diff==0:
-        pass
-    else:
-        arr_append = np.ones(n_diff)*rand_arr[-1]
-        rand_arr = np.append(rand_arr,arr_append)
+    rand_arr = rand.uniform(-step_size,step_size,Nm)
+    hp = np.copy(hi)
     hp = hi+rand_arr
     exp_p = f_exponent(hp, Cov_mi, Cov_di)
     p_acc = np.exp(exp_p-exp_i)
@@ -114,12 +89,11 @@ for i in range(num_it):
         num_acc +=1
     else:
         h = hi
+            
     llikelihood[i] = f_loglikelihood(h)
     hi = np.copy(h)
-    Hred.append(h[0:N_disc:frac])
     H.append(h)
 H = np.array(H)
-Hred = np.array(Hred)
 acc_rate = num_acc/num_it
 print(acc_rate)
 
@@ -174,50 +148,54 @@ ax[0].legend(fontsize = 23)
 plt.subplots_adjust(hspace=0)
 # In[Histogram]
 #Take models for n>1600
+H = np.array(H)
 fig, ax = plt.subplots(5, 4)
 for i, ax in enumerate(fig.axes):
-    ax.hist(Hred[1600:,i],30)
+    ax.hist(H[1600:,i],30)
 plt.show()
-#fig.savefig('prior.png')
+fig.savefig('prior.png')
 
 # In[2d distribution]
-num_col = 4
-fig, ax = plt.subplots(num_col,int(Nm/num_col), figsize = (18,10))
-for i in range(Nm-1):
+fig, ax = plt.subplots(2,10)
+for i in range(10):
     axis = ax.flatten()[i]
     axis.set_xticks([])
     axis.set_yticks([])
     axis.set(xlabel=f"{i}", ylabel = f"{i+1}")
-    axis.hist2d(Hred[1000:,i],Hred[1000:,i+1], 50)
+    axis.hist2d(H[1000:,i],H[1000:,i+1], 20)
 plt.subplots_adjust(wspace=.5, hspace=.3)
 
 plt.show()
 # In[h0]
 fig, ax = plt.subplots()
-ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
+ax.scatter(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
 ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
 ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
 ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
 
 ax.legend()
 # In[Autocorrelation]
+def compute_autocorrelation(arr):
+    a = []
+    for i in range(5000):
+        a.append(np.sum(arr*np.roll(arr,i)))
+    a = np.array(a)
+    return a
+Correlation = []
+for i in range(Nm):
+    Correlation.append(np.correlate(H[1000:,i],H[1000:,i],'same'))
+Corr = np.array(Correlation)
 fig, ax = plt.subplots(4,5)
 for i, ax in enumerate(fig.axes):
-    x = pd.Series(Hred[:,i])
+    x = pd.Series(Corr[i,:])
     ax = pd.plotting.autocorrelation_plot(x, ax= ax)
     ax.set_xlabel(f"m_{i}")
-    ax.set_ylabel("autocorr")    
+    ax.set_ylabel("autocorr")
+    
     #ax.set_yscale('log')
     #ax.set_xlim(0,10000)
 plt.subplots_adjust(wspace=.5, hspace=.8)
-# In[Correlation between adj h]
-Corr_adj = []
-for i in range(Nm-1):
-    Corr_adj.append(np.corrcoef(Hred[1000:,i].T,Hred[1000:,i+1].T)[1,0])
-Corr_adj = np.array(Corr_adj)
-fig, ax = plt.subplots()
-ax.plot(np.arange(Nm-1),Corr_adj)
-#ax.plot(np.arange(Nm-1), Corr_adj)
+# In[]
 # In[MCMC]
 """
 num_it = 5000

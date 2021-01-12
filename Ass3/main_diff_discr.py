@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 
 # -*- coding: utf-8 -*-
 """
@@ -14,6 +16,7 @@ from scipy import constants as c
 from scipy import signal
 import numpy.linalg as la
 import pandas as pd
+from numpy import newaxis as na
 # In[Data]
 G = c.G
 #use SI
@@ -24,8 +27,8 @@ dist = np.array([535,749,963,1177,1391,1605,1819,
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
                 37.3,31.5,21.8, 12.8])*1e-5
 Nd = len(dist) #number data points
-Nm =30#number model params
-N_disc = 90
+Nm =100#number model params
+N_disc = 100
 sigma_m = 300
 Cov_mi = np.eye(N_disc)/sigma_m**2
 sigma_d = 1e-5
@@ -41,9 +44,13 @@ l_arr = np.linspace(0,l_a,Nm)
 def f_forward(h):
     """Given model parameters h, returns vector of grav. anomalies."""
     dg_pred = np.empty(Nd)
-    x_diff = xi_arr-dist[:,np.newaxis]
-    dg_pred =G*drho*dx*np.sum((
-        np.log((x_diff**2+h**2)/(x_diff**2+delta))),axis =1)       
+    k = np.arange(N_disc)
+    diff0 = (k*dx-dist[:,na])
+    diff1 = ((k+1)*dx-dist[:,na])
+    dg_pred =G*drho*np.sum(  diff0*np.log(((diff1**2+h)*diff0**2)/(delta+diff1**2 * (diff0**2+h))) 
+        +dx*np.log((diff1**2+h**2)/(diff1**2+delta))
+        +2*np.sqrt(h) * (np.arctan(diff1/(np.sqrt(h)+delta)) - np.arctan(diff0/ (np.sqrt(h)+delta))) ,axis =1)       
+
     return dg_pred
 
 def f_h_preferred(i):
@@ -52,11 +59,11 @@ def f_h_preferred(i):
 
 def f_loglikelihood(h,Ci=Cov_di):
     g = f_forward(h)
-    deltag = (dg-g)[np.newaxis].T
+    deltag = (dg-g)[na].T
     return -1/2*deltag.T@Ci@deltag
 
 def f_rho(h, Ci = Cov_mi):
-    deltah = (h-h0)[np.newaxis].T
+    deltah = (h-h0)[na].T
     return -1/2*deltah.T@Ci@deltah
 
 def f_exponent(h, Cmi = Cov_mi, Cdi=Cov_di):
@@ -82,21 +89,21 @@ for i in range(Nm):
     else:
         h0[start_ind:] = f_h_preferred(idx_near)
 # In[MCMC]
-num_it = 10000
+num_it = int(2e4)
 num_acc = 0
-step_size = 20
+step_size = 5#15
 H = []
 Hred = []
 hi = h0
 r_list = []
 llikelihood = np.empty(num_it)
 for i in range(num_it):
-    if i%500==0:
+    if i%2000==0:
         print('iteration: {}'.format(i))
     exp_i = f_exponent(hi, Cov_mi, Cov_di)
     rand_num = rand.uniform(-step_size,step_size, Nm)
     ones_arr = np.ones((Nm, frac))
-    rand_arr = rand_num[:,np.newaxis]*ones_arr
+    rand_arr = rand_num[:,na]*ones_arr
     rand_arr = np.ndarray.flatten(rand_arr)
     
     n_diff = int(len(hi)-len(rand_arr))
@@ -126,7 +133,7 @@ print(acc_rate)
 # In[Find best prediction]
 Res = []
 for i in range(len(H[1000:])):
-    Res.append(np.mean( (dg-f_forward(H[1000+i]))**2))
+    Res.append(np.sqrt(np.sum( (dg-f_forward(H[1000+i]))**2)))
 Res = np.array(Res)
 index_min = np.argmin(Res)
 #print(index_min)
@@ -174,31 +181,50 @@ ax[0].legend(fontsize = 23)
 plt.subplots_adjust(hspace=0)
 # In[Histogram]
 #Take models for n>1600
-fig, ax = plt.subplots(5, 4)
-for i, ax in enumerate(fig.axes):
-    ax.hist(Hred[1600:,i],30)
+n_rows = 5
+if Nm<30:
+    fig, ax = plt.subplots(n_rows, int(Nm/n_rows))
+    for i, ax in enumerate(fig.axes):
+        ax.hist(Hred[1600:,i],50)
+else:
+    fig, ax = plt.subplots(n_rows, 6)
+    for i, ax in enumerate(fig.axes):
+        ax.hist(Hred[1600:,i],30)
 plt.show()
 #fig.savefig('prior.png')
 
 # In[2d distribution]
-num_col = 4
-fig, ax = plt.subplots(num_col,int(Nm/num_col), figsize = (18,10))
-for i in range(Nm-1):
-    axis = ax.flatten()[i]
-    axis.set_xticks([])
-    axis.set_yticks([])
-    axis.set(xlabel=f"{i}", ylabel = f"{i+1}")
-    axis.hist2d(Hred[1000:,i],Hred[1000:,i+1], 50)
-plt.subplots_adjust(wspace=.5, hspace=.3)
-
+num_rows = 5
+if Nm<30:
+    fig, ax = plt.subplots(num_rows,int(Nm/num_rows), figsize = (18,10))
+    for i in range(Nm-1):
+        axis = ax.flatten()[i]
+        axis.set_xticks([])
+        axis.set_yticks([])
+        axis.set(xlabel=f"{i}", ylabel = f"{i+1}")
+        axis.hist2d(Hred[1000:,i],Hred[1000:,i+1], 50)
+else:
+    fig, ax = plt.subplots(num_rows,6, figsize = (18,10))
+    for i in range(30):
+        axis = ax.flatten()[i]
+        axis.set_xticks([])
+        axis.set_yticks([])
+        axis.set(xlabel=f"{i}", ylabel = f"{i+1}")
+        axis.hist2d(Hred[1000:,i],Hred[1000:,i+1], 50)
+plt.subplots_adjust(wspace=.3, hspace=.3)
 plt.show()
 # In[h0]
 fig, ax = plt.subplots()
-ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
-ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
-ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
-ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
-
+if Nm<50:
+    ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
+    ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
+    ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
+    ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
+else:
+    ax.scatter(np.linspace(0,l_a,len(h0)),h0,s = 3, label = 'h0')
+    #ax.scatter(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
+    ax.scatter(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best', s=5)
+    ax.scatter(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ),s = 5, label = 'h_mean')
 ax.legend()
 # In[Autocorrelation]
 fig, ax = plt.subplots(4,5)
@@ -211,6 +237,7 @@ for i, ax in enumerate(fig.axes):
     #ax.set_xlim(0,10000)
 plt.subplots_adjust(wspace=.5, hspace=.8)
 # In[Correlation between adj h]
+"""
 Corr_adj = []
 for i in range(Nm-1):
     Corr_adj.append(np.corrcoef(Hred[1000:,i].T,Hred[1000:,i+1].T)[1,0])
@@ -218,6 +245,7 @@ Corr_adj = np.array(Corr_adj)
 fig, ax = plt.subplots()
 ax.plot(np.arange(Nm-1),Corr_adj)
 #ax.plot(np.arange(Nm-1), Corr_adj)
+"""
 # In[MCMC]
 """
 num_it = 5000
