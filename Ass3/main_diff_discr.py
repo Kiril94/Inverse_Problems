@@ -27,8 +27,8 @@ dist = np.array([535,749,963,1177,1391,1605,1819,
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
                 37.3,31.5,21.8, 12.8])*1e-5
 Nd = len(dist) #number data points
-Nm =100#number model params
-N_disc = 100
+Nm =20#number model params
+N_disc = 5*Nm
 sigma_m = 300
 Cov_mi = np.eye(N_disc)/sigma_m**2
 sigma_d = 1e-5
@@ -47,9 +47,9 @@ def f_forward(h):
     k = np.arange(N_disc)
     diff0 = (k*dx-dist[:,na])
     diff1 = ((k+1)*dx-dist[:,na])
-    dg_pred =G*drho*np.sum(  diff0*np.log(((diff1**2+h)*diff0**2)/(delta+diff1**2 * (diff0**2+h))) 
+    dg_pred =G*drho*np.sum(  diff0*np.log(((diff1**2+h**2)*diff0**2)/(delta+diff1**2 * (diff0**2+h**2))) 
         +dx*np.log((diff1**2+h**2)/(diff1**2+delta))
-        +2*np.sqrt(h) * (np.arctan(diff1/(np.sqrt(h)+delta)) - np.arctan(diff0/ (np.sqrt(h)+delta))) ,axis =1)       
+        +2*h * (np.arctan(diff1/(h+delta)) - np.arctan(diff0/ (h+delta))) ,axis =1)       
 
     return dg_pred
 
@@ -71,12 +71,6 @@ def f_exponent(h, Cmi = Cov_mi, Cdi=Cov_di):
  
 # In[preferred model h0]
 h0 = np.empty(N_disc)
-#separating the space in intervals of constant grav. anomaly
-#dist_diff = (np.roll(dist,-1)-dist)/2
-#dist_int = np.empty(len(dist)+1)
-#dist_int[0] = 0
-#dist_int[-1] = l_a
-#dist_int[1:-1] = dist[:-1]+dist_diff[:-1]
 x_h = np.linspace(0,l_a,N_disc)
 for i in range(Nm):
     start_ind = frac*i
@@ -89,9 +83,9 @@ for i in range(Nm):
     else:
         h0[start_ind:] = f_h_preferred(idx_near)
 # In[MCMC]
-num_it = int(2e4)
+num_it = int(3e4)
 num_acc = 0
-step_size = 5#15
+step_size = 50
 H = []
 Hred = []
 hi = h0
@@ -129,15 +123,9 @@ H = np.array(H)
 Hred = np.array(Hred)
 acc_rate = num_acc/num_it
 print(acc_rate)
+print(np.std(llikelihood[1000:])/np.sqrt(Nd/2))
+print((np.mean(llikelihood[1000:])-(-Nd/2)))
 
-# In[Find best prediction]
-Res = []
-for i in range(len(H[1000:])):
-    Res.append(np.sqrt(np.sum( (dg-f_forward(H[1000+i]))**2)))
-Res = np.array(Res)
-index_min = np.argmin(Res)
-#print(index_min)
-h_best = H[index_min+1000]
 # In[Plot log likelihood]
 
 fig,ax = plt.subplots()
@@ -151,6 +139,15 @@ ax.set_ylim(-40,10)
 plt.show()
 print(np.std(llikelihood[1000:])/np.sqrt(Nd/2))
 print(np.mean(llikelihood[1000:])-(-Nd/2))
+# In[Find best prediction]
+Res = []
+for i in range(len(H[1000:])):
+    Res.append(np.sqrt(np.sum( (dg-f_forward(H[1000+i]))**2)))
+Res = np.array(Res)
+index_min = np.argmin(Res)
+#print(index_min)
+h_best = H[index_min+1000]
+
 
 # In[Plot with unc]
 fig, ax = plt.subplots(2,figsize = (18,12),gridspec_kw={'height_ratios': [3,1]})
@@ -191,11 +188,11 @@ else:
     for i, ax in enumerate(fig.axes):
         ax.hist(Hred[1600:,i],30)
 plt.show()
-#fig.savefig('prior.png')
+fig.savefig('prior_Nm20_Ndisc100.png')
 
 # In[2d distribution]
 num_rows = 5
-if Nm<30:
+if Nm<=30:
     fig, ax = plt.subplots(num_rows,int(Nm/num_rows), figsize = (18,10))
     for i in range(Nm-1):
         axis = ax.flatten()[i]
@@ -215,15 +212,15 @@ plt.subplots_adjust(wspace=.3, hspace=.3)
 plt.show()
 # In[h0]
 fig, ax = plt.subplots()
-if Nm<50:
+if Nm<24:
     ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
-    ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
+    #ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
     ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
     ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
 else:
     ax.scatter(np.linspace(0,l_a,len(h0)),h0,s = 3, label = 'h0')
     #ax.scatter(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
-    ax.scatter(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best', s=5)
+    ax.scatter(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best', s=15)
     ax.scatter(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ),s = 5, label = 'h_mean')
 ax.legend()
 # In[Autocorrelation]
