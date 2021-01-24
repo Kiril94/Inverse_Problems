@@ -24,8 +24,8 @@ dist = np.array([535,749,963,1177,1391,1605,1819,
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
                 37.3,31.5,21.8, 12.8])*1e-5
 Nd = len(dist) #number data points
-Nm =30#number model params
-N_disc = 90
+Nm =20#number model params
+N_disc = 120
 sigma_m = 300
 Cov_mi = np.eye(N_disc)/sigma_m**2
 sigma_d = 1e-5
@@ -53,7 +53,7 @@ def f_h_preferred(i):
 def f_loglikelihood(h,Ci=Cov_di):
     g = f_forward(h)
     deltag = (dg-g)[np.newaxis].T
-    return -1/2*deltag.T@Ci@deltag
+    return 0#-1/2*deltag.T@Ci@deltag
 
 def f_rho(h, Ci = Cov_mi):
     deltah = (h-h0)[np.newaxis].T

@@ -25,10 +25,10 @@ l_a,drho, delta = 3.421e3, -1.7e3, 1e-12
 dist = np.array([535,749,963,1177,1391,1605,1819,
                      2033,2247,2461,2675,2889])#*1e-3
 dg = -np.array([15,24,31.2,36.8,40.8,42.7,42.4,40.9,
-                37.3,31.5,21.8, 12.8])*1e-5
+                   37.3,31.5,21.8, 12.8])*1e-5
 Nd = len(dist) #number data points
-Nm =20#number model params
-N_disc = 5*Nm
+Nm =15#number model params
+N_disc = 15
 sigma_m = 300
 Cov_mi = np.eye(N_disc)/sigma_m**2
 sigma_d = 1e-5
@@ -47,7 +47,7 @@ def f_forward(h):
     k = np.arange(N_disc)
     diff0 = (k*dx-dist[:,na])
     diff1 = ((k+1)*dx-dist[:,na])
-    dg_pred =G*drho*np.sum(  diff0*np.log(((diff1**2+h**2)*diff0**2)/(delta+diff1**2 * (diff0**2+h**2))) 
+    dg_pred =G * drho * np.sum(  diff0*np.log(((diff1**2+h**2)*diff0**2)/(delta+diff1**2 * (diff0**2+h**2))) 
         +dx*np.log((diff1**2+h**2)/(diff1**2+delta))
         +2*h * (np.arctan(diff1/(h+delta)) - np.arctan(diff0/ (h+delta))) ,axis =1)       
 
@@ -83,16 +83,16 @@ for i in range(Nm):
     else:
         h0[start_ind:] = f_h_preferred(idx_near)
 # In[MCMC]
-num_it = int(3e4)
+num_it = int(2e4)
 num_acc = 0
-step_size = 50
+step_size = 20
 H = []
 Hred = []
 hi = h0
 r_list = []
 llikelihood = np.empty(num_it)
 for i in range(num_it):
-    if i%2000==0:
+    if i%1000==0:
         print('iteration: {}'.format(i))
     exp_i = f_exponent(hi, Cov_mi, Cov_di)
     rand_num = rand.uniform(-step_size,step_size, Nm)
@@ -151,8 +151,8 @@ h_best = H[index_min+1000]
 
 # In[Plot with unc]
 fig, ax = plt.subplots(2,figsize = (18,12),gridspec_kw={'height_ratios': [3,1]})
-res = dg-f_forward(h)
-sigma = np.std(res)
+res = dg-f_forward(np.mean(H[1000:,:], axis =0))
+sigma = sigma_d
 ax[1].plot(dist, res, '.', color = 'r')
 ax[1].axhline(y=sigma, color="b", zorder = 0)
 ax[1].axhline(y=-sigma, color="b",zorder = 0)
@@ -215,13 +215,13 @@ fig, ax = plt.subplots()
 if Nm<24:
     ax.plot(np.linspace(0,l_a,len(h0)),h0, label = 'h0')
     #ax.plot(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
-    ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
+    #ax.plot(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best')
     ax.plot(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ), label = 'h_mean')
 else:
     ax.scatter(np.linspace(0,l_a,len(h0)),h0,s = 3, label = 'h0')
     #ax.scatter(np.linspace(0,l_a,len(h0)),H[-1,:], label = 'h_final')
-    ax.scatter(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best', s=15)
-    ax.scatter(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ),s = 5, label = 'h_mean')
+    #ax.scatter(np.linspace(0,l_a,len(h0)),h_best, label = 'h_best', s=15)
+    ax.scatter(np.linspace(0,l_a,len(h0)),np.mean(H[1500:,:], axis =0 ),s = 10, label = 'h_mean')
 ax.legend()
 # In[Autocorrelation]
 fig, ax = plt.subplots(4,5)
